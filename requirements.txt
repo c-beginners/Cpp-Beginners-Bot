@@ -1,2 +1,5 @@
 discord
+leaderboard
 PyNaCl
+redis==2.10.6
+texttable
