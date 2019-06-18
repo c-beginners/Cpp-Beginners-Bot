@@ -1,0 +1,37 @@
+version: "3.7"
+services:
+  cppbot:
+    image: striker4150/cppbot
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 20s
+        max_attempts: 3
+        window: 10s
+      resources:
+        limits:
+          cpus: "0.3"
+          memory: 50M
+    networks:
+      - net
+  redis:
+    image: redis:5.0.5
+    ports:
+      - "6379:6379"
+    volumes:
+      - "./redis.conf:/usr/local/etc/redis/redis.conf"
+    deploy:
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 50M
+        reservations:
+          cpus: "0.25"
+          memory: 20M
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - net
+networks:
+  net:
