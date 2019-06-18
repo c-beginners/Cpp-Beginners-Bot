@@ -6,43 +6,237 @@ import logging
 import os.path
 import sys
 
-import discord.ext.commands
-from leaderboard.leaderboard import Leaderboard
+from discord.ext import commands
+from leaderboard import leaderboard
 import redis
 from texttable import Texttable
 
 # Bot info
-__version__ = '0.1.0'
-GITHUB_URL = 'https://github.com/c-beginners/CppBeginnersBot'
+__version__ = '0.2.0'
 
 # Defaults
 DEFAULT_CONFIG = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'config.ini'))
 DEFAULT_LOG = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'discord.log'))
 
-class Points(discord.ext.commands.Cog):
+class AdminCog(commands.Cog, name='Admin'):
+    """Commands for channel administration."""
     def __init__(self, bot):
         self.bot = bot
 
-class Tasks(discord.ext.commands.Cog):
+    @commands.command('ban')
+    async def ban_user(self, ctx, user):
+        """Ban a specified user."""
+
+    @commands.command('purge')
+    async def purge_user(self, ctx, user):
+        """Purge the user's messages."""
+
+
+class LeaderboardCog(commands.Cog, name='Leaderboard'):
+    """Commands for the task leaderboards."""
     def __init__(self, bot):
         self.bot = bot
 
-class Users(discord.ext.commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
+    @staticmethod
+    def leaderboard_list(lboard, page):
+        """Create list from leaderboard."""
+        lboard_list = [['rank', 'member', 'score']]
+        for row in lboard.leaders(page):
+            lboard_list.append([row['rank'], row['member'].decode('utf-8'), row['score']])
+        return lboard_list
 
-class CppBot(discord.ext.commands.Bot):
+    @staticmethod
+    def _get_lboard_table(lboard, page):
+        """Get the leaderboard as a text table."""
+        table = Texttable()
+        table.set_cols_align(['c', 'c', 'c'])
+        table.set_cols_valign(['m', 'm', 'm'])
+
+        table.add_rows(LeaderboardCog.leaderboard_list(lboard, page))
+
+        return table.draw()
+
+    @commands.command('addtask')
+    async def add_task(self, ctx, task, points=100):
+        """Add a new task."""
+        if ctx.message.author == self.bot.user:
+            return
+
+        points = float(points)
+
+        if task in self.bot.lboards.keys():
+            await ctx.message.channel.send('Task already exists!')
+            return
+
+        self.bot.lboards[task] = leaderboard.Leaderboard(task, page_size=10,
+                                                         password=self.bot.redis_key)
+
+        logging.info('Added the task "%s" with %f points', task, points)
+
+    @commands.command('deltask')
+    async def del_task(self, ctx, task):
+        """Removes a task."""
+        if ctx.message.author == self.bot.user:
+            return
+
+        if task not in self.bot.lboards.keys():
+            await ctx.message.channel.send('Task doesn\'t exist!')
+            return
+
+        self.bot.lboards[task].delete_leaderboard()
+        self.bot.lboards.pop(task)
+
+        logging.info('Removed the task "%s"', task)
+
+    @commands.command('addpoints')
+    async def add_points(self, ctx, user, task, points):
+        """Add points to a user's task score."""
+        if ctx.message.author == self.bot.user:
+            return
+
+        points = float(points)
+
+        if task not in self.bot.lboards.keys():
+            await ctx.message.channel.send('Task doesn\'t exist!')
+            return
+        if points < 0:
+            await ctx.message.channel.send('Points should be greater than 0!')
+            return
+
+        current_points = self.bot.lboards[task].score_for(user)
+        if current_points:
+            points += current_points
+        self.bot.lboards[task].rank_member(user, points)
+
+        logging.info('Gave the user "%s" %f points', user, points)
+
+    @commands.command('delpoints')
+    async def del_points(self, ctx, user, task, points):
+        """Remove points from a user's task score."""
+        if ctx.message.author == self.bot.user:
+            return
+
+        points = float(points)
+
+        if task not in self.bot.lboards.keys():
+            await ctx.message.channel.send('Task doesn\'t exist!')
+            return
+        if not self.bot.lboards[task].check_member(user):
+            await ctx.message.channel.send('User doesn\'t exist in the task!')
+            return
+        if points < 0:
+            await ctx.message.channel.send('Points should be greater than 0!')
+            return
+
+        current_points = self.bot.lboards[task].score_for(user)
+        if current_points:
+            points -= current_points
+        self.bot.lboards[task].rank_member(user, points)
+
+        logging.info('Docked the user "%s" -%f points', user, points)
+
+    @commands.command('setpoints')
+    async def set_points(self, ctx, user, task, points):
+        """Set a user's task score."""
+        if ctx.message.author == self.bot.user:
+            return
+
+        points = float(points)
+
+        if task not in self.bot.lboards.keys():
+            await ctx.message.channel.send('Task doesn\'t exist!')
+            return
+
+        self.bot.lboards[task].rank_member(user, points)
+
+        logging.info('Set the user "%s" to %f points', user, points)
+
+    @commands.command('addentry')
+    async def add_entry(self, ctx, user, task):
+        """Add a user entry to a task."""
+        if ctx.message.author == self.bot.user:
+            return
+
+        if task not in self.bot.lboards.keys():
+            await ctx.message.channel.send('Task doesn\'t exist!')
+            return
+        if self.bot.lboards[task].check_member(user):
+            await ctx.message.channel.send('User already exists in the task!')
+            return
+
+        self.bot.lboards[task].rank_member(user, 0)
+
+        logging.info('Added the user entry "%s" to task %s', user, task)
+
+    @commands.command('delentry')
+    async def del_entry(self, ctx, user, task):
+        """Removes a user entry from a task."""
+        if ctx.message.author == self.bot.user:
+            return
+
+        if task not in self.bot.lboards.keys():
+            await ctx.message.channel.send('Task doesn\'t exist!')
+            return
+        if not self.bot.lboards[task].check_member(user):
+            await ctx.message.channel.send('User doesn\'t exist in the task!')
+            return
+
+        self.bot.lboards[task].remove_member(user)
+
+        logging.info('Removed the user entry "%s" from task %s', user, task)
+
+    @commands.command('leaderboard')
+    async def show_leaderboard(self, ctx, lboard_name, lboard_page=1):
+        """Display the specified leaderboard."""
+        if ctx.message.author == self.bot.user:
+            return
+
+        if lboard_name not in self.bot.lboards.keys():
+            await ctx.message.channel.send('Leaderboard does not exist!')
+            return
+        if not self.bot.lboards[lboard_name].total_members():
+            await ctx.message.channel.send('Cannot display empty leaderboard!')
+            return
+        if lboard_page < 1 or self.bot.lboards[lboard_name].total_pages() < lboard_page:
+            await ctx.message.channel.send('Invalid page number!')
+            return
+
+        leaderboard_msg = '```' \
+                          + 'Leaderboard "' + lboard_name + '"\n\n' + \
+                          LeaderboardCog._get_lboard_table(self.bot.lboards[lboard_name],
+                                                           lboard_page) \
+                          + '\n\n**Page ' + str(lboard_page) + '**' \
+                          + '```'
+        await ctx.message.channel.send(leaderboard_msg)
+
+        logging.info('Displayed leaderboard "%s" page %d', lboard_name, lboard_page)
+
+    @commands.command('leaderboards')
+    async def list_leaderboards(self, ctx):
+        """List all leaderboard names."""
+        if ctx.message.author == self.bot.user:
+            return
+
+        lboard_list = ''
+        for lboard_name in self.bot.lboards.keys():
+            lboard_list += lboard_name + '\n'
+
+        await ctx.message.channel.send(lboard_list)
+
+
+class CppBot(commands.Bot):
     """Custom Discord client for the CppBot."""
     def __init__(self, redis_key):
         super().__init__('!', case_insensitive=True)
-        self.redis_client = redis.Redis(password=redis_key)
-        self.lboards = {lboard_name: Leaderboard(lboard_name, page_size=10, password=redis_key)
-                        for lboard_name
-                        in map(lambda k: k.decode('utf-8'), self.redis_client.keys())}
+        self.redis_key = redis_key
+        self.lboards = {lboard: leaderboard.Leaderboard(lboard, page_size=10,
+                                                        password=redis_key)
+                        for lboard in map(lambda k: k.decode('utf-8'),
+                                          redis.Redis(password=redis_key).keys())}
 
     async def on_ready(self):
         """Logged on event."""
-        print('Logged on as {0}!'.format(self.user))
+        logging.info('Logged on as %s!', self.user)
 
 
 def generate_config(config_path):
@@ -88,25 +282,6 @@ def _configure_logger(log_file, log_level):
     logger.setLevel(numeric_level)
 
 
-def leaderboard_list(lboard, page):
-    """Create list from leaderboard."""
-    lboard_list = [['rank', 'member', 'score']]
-    for row in lboard.leaders(page):
-        lboard_list.append([row['rank'], row['member'].decode('utf-8'), row['score']])
-    return lboard_list
-
-
-def _get_lboard_table(lboard, page):
-    """Get the leaderboard as a text table."""
-    table = Texttable()
-    table.set_cols_align(['c', 'c', 'c'])
-    table.set_cols_valign(['m', 'm', 'm'])
-
-    table.add_rows(leaderboard_list(lboard, page))
-
-    return table.draw()
-
-
 def _main():
     parser = argparse.ArgumentParser(description='Discord Bot for the Cpp Beginners channel.')
     parser.add_argument('--config', default=DEFAULT_CONFIG, help='specify a config file')
@@ -133,167 +308,8 @@ def _main():
     # Start the discord client
     client = CppBot(redis_key)
 
-    # Commands
-    @client.command('addtask')
-    async def add_task(ctx, task, points=100):
-        """Add a new task."""
-        if ctx.message.author == client.user:
-            return
-
-        points = float(points)
-
-        if task in client.lboards.keys():
-            await ctx.message.channel.send('Task already exists!')
-            return
-
-        client.lboards[task] = Leaderboard(task, page_size=10, password=redis_key)
-
-        logging.info('Added the task "%s" with %f points', task, points)
-
-
-    @client.command('deltask')
-    async def del_task(ctx, task):
-        """Removes a task."""
-        if ctx.message.author == client.user:
-            return
-
-        if task not in client.lboards.keys():
-            await ctx.message.channel.send('Task doesn\'t exist!')
-            return
-
-        client.lboards[task].delete_leaderboard()
-        client.lboards.pop(task)
-
-        logging.info('Removed the task "%s"', task)
-
-
-    @client.command('addpoints')
-    async def add_points(ctx, user, task, points):
-        """Add points to a user's task score."""
-        if ctx.message.author == client.user:
-            return
-
-        points = float(points)
-
-        if task not in client.lboards.keys():
-            await ctx.message.channel.send('Task doesn\'t exist!')
-            return
-        if points < 0:
-            await ctx.message.channel.send('Points should be greater than 0!')
-            return
-
-        current_points = client.lboards[task].score_for(user)
-        if current_points:
-            points += current_points
-        client.lboards[task].rank_member(user, points)
-
-        logging.info('Gave the user "%s" %f points', user, points)
-
-
-    @client.command('delpoints')
-    async def del_points(ctx, user, task, points):
-        """Remove points from a user's task score."""
-        if ctx.message.author == client.user:
-            return
-
-        points = float(points)
-
-        if task not in client.lboards.keys():
-            await ctx.message.channel.send('Task doesn\'t exist!')
-            return
-        if not client.lboards[task].check_member(user):
-            await ctx.message.channel.send('User doesn\'t exist in the task!')
-            return
-        if points < 0:
-            await ctx.message.channel.send('Points should be greater than 0!')
-            return
-
-        current_points = client.lboards[task].score_for(user)
-        if current_points:
-            points -= current_points
-        client.lboards[task].rank_member(user, points)
-
-        logging.info('Docked the user "%s" -%f points', user, points)
-
-
-    @client.command('setpoints')
-    async def set_points(ctx, user, task, points):
-        """Set a user's task score."""
-        if ctx.message.author == client.user:
-            return
-
-        points = float(points)
-
-        if task not in client.lboards.keys():
-            await ctx.message.channel.send('Task doesn\'t exist!')
-            return
-
-        client.lboards[task].rank_member(user, points)
-
-        logging.info('Set the user "%s" to %f points', user, points)
-
-
-    @client.command('adduser')
-    async def add_user(ctx, user, task):
-        """Add a user entry to a task."""
-        if ctx.message.author == client.user:
-            return
-
-        if task not in client.lboards.keys():
-            await ctx.message.channel.send('Task doesn\'t exist!')
-            return
-        if client.lboards[task].check_member(user):
-            await ctx.message.channel.send('User already exists in the task!')
-            return
-
-        client.lboards[task].rank_member(user, 0)
-
-        logging.info('Added the user "%s" to task %s', user, task)
-
-
-    @client.command('deluser')
-    async def del_user(ctx, user, task):
-        """Removes a user entry from a task."""
-        if ctx.message.author == client.user:
-            return
-
-        if task not in client.lboards.keys():
-            await ctx.message.channel.send('Task doesn\'t exist!')
-            return
-        if not client.lboards[task].check_member(user):
-            await ctx.message.channel.send('User doesn\'t exist in the task!')
-            return
-
-        client.lboards[task].remove_member(user)
-
-        logging.info('Removed the user "%s" from task %s', user, task)
-
-
-    @client.command('leaderboard')
-    async def show_leaderboard(ctx, lboard_name, lboard_page=1):
-        """Display the specified leaderboard."""
-        if ctx.message.author == client.user:
-            return
-
-        if lboard_name not in client.lboards.keys():
-            await ctx.message.channel.send('Leaderboard does not exist!')
-            return
-        if not client.lboards[lboard_name].total_members():
-            await ctx.message.channel.send('Cannot display empty leaderboard!')
-            return
-        if lboard_page < 1 or client.lboards[lboard_name].total_pages() < lboard_page:
-            await ctx.message.channel.send('Invalid page number!')
-            return
-
-        leaderboard_msg = '```' \
-                          + 'Leaderboard "' + lboard_name + '"\n\n' + \
-                          _get_lboard_table(client.lboards[lboard_name],
-                                            lboard_page) \
-                          + '\n\n**Page ' + str(lboard_page) + '**' \
-                          + '```'
-        await ctx.message.channel.send(leaderboard_msg)
-
-        logging.info('Displayed leaderboard "%s" page %d', lboard_name, lboard_page)
+    client.add_cog(AdminCog(client))
+    client.add_cog(LeaderboardCog(client))
 
     if api_key:
         logging.info('Starting CppClient')
