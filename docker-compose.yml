@@ -2,6 +2,8 @@ version: "3.7"
 services:
   cppbot:
     image: striker4150/cppbot
+    volumes:
+      - "/app/config.ini:/app/config.ini"
     deploy:
       restart_policy:
         condition: on-failure
@@ -20,6 +22,7 @@ services:
       - "6379:6379"
     volumes:
       - "./redis.conf:/usr/local/etc/redis/redis.conf"
+      - "/app/dump.rdb:/app/dump.rdb"
     deploy:
       restart_policy:
         condition: on-failure
@@ -33,5 +36,7 @@ services:
     command: redis-server /usr/local/etc/redis/redis.conf
     networks:
       - net
+env_file:
+  - .env
 networks:
   net:
