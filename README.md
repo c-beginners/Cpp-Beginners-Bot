@@ -1,3 +1,3 @@
-# CppBeginners Bot
+# C++ Beginners Bot
 
-Discord Bot for the Cpp Beginners Server
+Discord Bot for the C++ Beginners Server
