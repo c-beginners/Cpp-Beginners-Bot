@@ -1,17 +1,50 @@
 """This module contains useful utility functions."""
 
+from configparser import ConfigParser
 import logging
+
 import redis
-import sys
+
+from cppbot.constants import (DEFAULT_CONFIG_PATH, DEFAULT_LOG_NAME, DEFAULT_LOG_FORMAT, DEFAULT_LOG_PATH)
+
+config = ConfigParser(allow_no_value=True, interpolation=None)
+config.optionxform = str
+
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(DEFAULT_LOG_FORMAT)
+
+handlers = []
+logger = logging.getLogger(DEFAULT_LOG_NAME)
+logger.addHandler(stream_handler)
 
 
-def configure_logger(log_name=None, log_level=logging.DEBUG, log_file=None):
+def generate_config(config_path=DEFAULT_CONFIG_PATH, config_defaults=None):
+    """Generate a default configuration."""
+    if config_defaults:
+        if not isinstance(config_defaults, list):
+            raise ValueError('config_defaults must be a nested dict')
+
+        for key, value in config_defaults:
+            config[key] = value
+
+    with open(config_path, 'w') as configfile:
+        config.write(configfile)
+    logger.debug('Generated config file at %s', config_path)
+
+    return config
+
+
+def read_config(config_path=DEFAULT_CONFIG_PATH):
+    """Read a configuration file."""
+    if not config.read(config_path):
+        raise IOError('Config could not be loaded')
+    logger.debug('Read config file from %s', config_path)
+
+    return config
+
+
+def configure_logger(log_level, logger, log_file=DEFAULT_LOG_PATH):
     """Configures a logger."""
-    if log_name:
-        logger = logging.getLogger(log_name)
-    else:
-        logger = logging.getLogger()
-
     # Set log level
     if isinstance(log_level, str):
         numeric_level = getattr(logging, log_level.upper(), None)
@@ -22,20 +55,20 @@ def configure_logger(log_name=None, log_level=logging.DEBUG, log_file=None):
     logger.setLevel(numeric_level)
 
     # Set log file
-    if log_file:
-        handler = logging.FileHandler(filename=log_file, encoding='utf-8', mode='w')
-        handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
+    if log_file and log_file not in handlers:
+        handler = logging.FileHandler(filename=log_file, mode='a', encoding='utf-8')
+        handler.setFormatter(DEFAULT_LOG_FORMAT)
+
         logger.addHandler(handler)
+        handlers.append(log_file)
 
     return logger
 
 
 def get_redis_keys(redis_password):
     """Get a list of keys in the Redis database."""
-    try:
-        keys = redis.Redis(password=redis_password).keys()
-    except redis.exceptions.ConnectionError:
-        logging.critical('Could not connect to redis server')
-        sys.exit(1)
+    keys = redis.Redis(password=redis_password).keys()
 
-    return list(map(lambda k: k.decode('utf-8'), keys))
+    key_list = list(map(bytes.decode, keys))
+
+    return key_list
