@@ -6,6 +6,8 @@ from discord.ext import commands
 
 from cppbot.constants import SPAM_THRESHOLD
 
+logger = logging.getLogger(__name__)
+
 
 def setup(bot):
     """Set up extension."""
@@ -13,17 +15,26 @@ def setup(bot):
 
 
 def is_spam(message):
+    """Checks if a given message is spam.
+
+    Args:
+        message (discord.Message): The message to check.
+
+    Returns:
+        bool: Indicates whether the message is spam.
+    """
     try:
         spam_score = antispam.score(message.content)
         if spam_score >= SPAM_THRESHOLD:
-            logging.info('Message from %s with spam score %s', message.author, spam_score)
+            logger.info('Message from %s with spam score %s', message.author, spam_score)
             return True
         else:
             return False
     except TypeError:
+        # Ignore input bug
         pass
     except discord.errors.Forbidden as err:
-        logging.error(str(err))
+        logger.error(str(err))
 
 
 class AntispamCog(commands.Cog, name='Admin'):
@@ -32,10 +43,10 @@ class AntispamCog(commands.Cog, name='Admin'):
         self.bot = bot
 
     async def on_message(self, message):
-        """On message."""
-        logging.debug('Received message from %s', message.author)
+        logger.debug('Received message from %s', message.author)
 
+        # TODO - Decide how to handle spam messages
         if is_spam(message):
-            await message.delete()
+            pass
 
         await self.process_commands(message)
