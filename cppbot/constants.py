@@ -2,7 +2,6 @@ import logging
 import os.path
 
 # Logging
-DEFAULT_LOG_NAME = 'cppbot'
 DEFAULT_LOG_FORMAT = logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s')
 DEFAULT_LOG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'discord.log'))
 

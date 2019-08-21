@@ -5,17 +5,13 @@ import logging
 
 import redis
 
-from cppbot.constants import (DEFAULT_CONFIG_PATH, DEFAULT_LOG_NAME, DEFAULT_LOG_FORMAT, DEFAULT_LOG_PATH)
+from cppbot.constants import DEFAULT_CONFIG_PATH, DEFAULT_LOG_FORMAT, DEFAULT_LOG_PATH
 
 config = ConfigParser(allow_no_value=True, interpolation=None)
 config.optionxform = str
 
-stream_handler = logging.StreamHandler()
-stream_handler.setFormatter(DEFAULT_LOG_FORMAT)
-
-handlers = []
-logger = logging.getLogger(DEFAULT_LOG_NAME)
-logger.addHandler(stream_handler)
+log_handlers = []
+logger = logging.getLogger(__name__)
 
 
 def generate_config(config_path=DEFAULT_CONFIG_PATH, config_defaults=None):
@@ -55,12 +51,12 @@ def configure_logger(log_level, logger, log_file=DEFAULT_LOG_PATH):
     logger.setLevel(numeric_level)
 
     # Set log file
-    if log_file and log_file not in handlers:
+    if log_file and log_file not in log_handlers:
         handler = logging.FileHandler(filename=log_file, mode='a', encoding='utf-8')
         handler.setFormatter(DEFAULT_LOG_FORMAT)
 
         logger.addHandler(handler)
-        handlers.append(log_file)
+        log_handlers.append(log_file)
 
     return logger
 

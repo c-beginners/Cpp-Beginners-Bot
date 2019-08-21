@@ -10,7 +10,8 @@ from leaderboard.leaderboard import Leaderboard
 from cppbot import utils
 from cppbot.constants import DEFAULT_CONFIG_PATH, DEFAULT_CONFIG_SETTINGS
 from cppbot.extensions import admin
-from cppbot.utils import logger
+
+logger = logging.getLogger(__name__)
 
 
 class CppBot(commands.Bot):
@@ -44,9 +45,6 @@ def load_config(config_path):
 
 
 def _main():
-    # TODO - Remove this line
-    utils.configure_logger(logging.DEBUG, logger)
-
     # Program args
     parser = argparse.ArgumentParser(description='Discord Bot for the Cpp Beginners channel.')
     parser.add_argument('--config', default=DEFAULT_CONFIG_PATH, help='specify a config file')
