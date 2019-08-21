@@ -1,3 +1,5 @@
+"""The Antispam extension."""
+
 import logging
 
 import antispam
@@ -33,8 +35,8 @@ def is_spam(message):
     except TypeError:
         # Ignore input bug
         pass
-    except discord.errors.Forbidden as err:
-        logger.error(str(err))
+    except discord.errors.Forbidden as e:
+        logger.exception(str(e))
 
 
 class AntispamCog(commands.Cog, name='Admin'):
